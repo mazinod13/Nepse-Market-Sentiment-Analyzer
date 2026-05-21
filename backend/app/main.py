@@ -10,6 +10,7 @@ from app.api.sentiment_events import router as sentiment_events_router
 from app.api.sources import router as sources_router
 from app.api.company_aliases import router as company_aliases_router
 from app.api.agent import router as agent_router
+from app.api.scraping_jobs import router as scraping_jobs_router
 
 from app.core.config import settings
 
@@ -38,6 +39,7 @@ app.include_router(article_company_maps_router)
 app.include_router(market_sentiment_scores_router)
 app.include_router(company_aliases_router)
 app.include_router(agent_router)
+app.include_router(scraping_jobs_router)
 
 @app.get("/")
 def root():

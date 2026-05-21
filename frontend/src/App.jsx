@@ -53,8 +53,17 @@ function App() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
   const [agentResult, setAgentResult] = useState(null);
   const [isRunningAgent, setIsRunningAgent] = useState(false);
+
+  const [scraperSourceId, setScraperSourceId] = useState("bizmandu");
+  const [scraperLimit, setScraperLimit] = useState(10);
+  const [scraperRunPipeline, setScraperRunPipeline] = useState(true);
+  const [scrapeTaskId, setScrapeTaskId] = useState("");
+  const [scrapeJobStatus, setScrapeJobStatus] = useState(null);
+
+  const [selectedCompanyArticleId, setSelectedCompanyArticleId] = useState("");
 
   const showSuccess = (text) => {
     setMessage(text);
@@ -125,6 +134,46 @@ function App() {
       showError("Could not load dashboard data. Make sure FastAPI is running.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const runScrapingJob = async () => {
+    try {
+      setError("");
+      setMessage("");
+      setScrapeJobStatus(null);
+
+      const res = await apiClient.post("/scraping-jobs/run", {
+        source_id: scraperSourceId,
+        limit: Number(scraperLimit),
+        run_pipeline: scraperRunPipeline,
+      });
+
+      setScrapeTaskId(res.data.task_id);
+      showSuccess(`Scraping job queued. Task ID: ${res.data.task_id}`);
+    } catch (err) {
+      showError(err.response?.data?.detail || "Could not start scraping job.");
+    }
+  };
+
+  const checkScrapingJobStatus = async () => {
+    if (!scrapeTaskId) {
+      showError("No scraping task ID found.");
+      return;
+    }
+
+    try {
+      const res = await apiClient.get(`/scraping-jobs/${scrapeTaskId}`);
+      setScrapeJobStatus(res.data);
+
+      if (res.data.state === "SUCCESS") {
+        showSuccess("Scraping job completed.");
+        await fetchDashboardData();
+      } else if (res.data.state === "FAILURE") {
+        showError("Scraping job failed.");
+      }
+    } catch (err) {
+      showError(err.response?.data?.detail || "Could not check scraping job.");
     }
   };
 
@@ -260,46 +309,49 @@ function App() {
       );
     }
   };
+
   const runAgentForSelectedArticle = async () => {
-  if (!selectedArticleId) {
-    showError("Select an article first.");
-    return;
-  }
+    if (!selectedArticleId) {
+      showError("Select an article first.");
+      return;
+    }
 
-  try {
-    setIsRunningAgent(true);
-    setError("");
+    try {
+      setIsRunningAgent(true);
+      setError("");
 
-    const res = await apiClient.post(`/agent/articles/${selectedArticleId}/run`);
+      const res = await apiClient.post(
+        `/agent/articles/${selectedArticleId}/run`
+      );
 
-    setAgentResult(res.data);
-    showSuccess("Agent pipeline completed for selected article.");
+      setAgentResult(res.data);
+      showSuccess("Agent pipeline completed for selected article.");
 
-    await fetchDashboardData();
-  } catch (err) {
-    showError(err.response?.data?.detail || "Could not run agent pipeline.");
-  } finally {
-    setIsRunningAgent(false);
-  }
-};
+      await fetchDashboardData();
+    } catch (err) {
+      showError(err.response?.data?.detail || "Could not run agent pipeline.");
+    } finally {
+      setIsRunningAgent(false);
+    }
+  };
 
-const runAgentForAllArticles = async () => {
-  try {
-    setIsRunningAgent(true);
-    setError("");
+  const runAgentForAllArticles = async () => {
+    try {
+      setIsRunningAgent(true);
+      setError("");
 
-    const res = await apiClient.post("/agent/articles/run-all");
+      const res = await apiClient.post("/agent/articles/run-all");
 
-    setAgentResult(res.data);
-    showSuccess("Agent pipeline completed for all articles.");
+      setAgentResult(res.data);
+      showSuccess("Agent pipeline completed for all articles.");
 
-    await fetchDashboardData();
-  } catch (err) {
-    showError(err.response?.data?.detail || "Could not run agent pipeline.");
-  } finally {
-    setIsRunningAgent(false);
-  }
-};
+      await fetchDashboardData();
+    } catch (err) {
+      showError(err.response?.data?.detail || "Could not run agent pipeline.");
+    } finally {
+      setIsRunningAgent(false);
+    }
+  };
 
   const getScoreBadgeClass = (score) => {
     if (score >= 80) return "bg-emerald-50 text-emerald-700 ring-emerald-200";
@@ -308,6 +360,21 @@ const runAgentForAllArticles = async () => {
     if (score >= 20) return "bg-orange-50 text-orange-700 ring-orange-200";
     return "bg-red-50 text-red-700 ring-red-200";
   };
+
+  const selectedCompanyMaps = articleMaps.filter(
+    (item) => item.company_symbol === selectedCompanySymbol
+  );
+
+  const selectedCompanyArticles = selectedCompanyMaps
+    .map((mapItem) =>
+      newsArticles.find((article) => article.id === mapItem.article_id)
+    )
+    .filter(Boolean);
+
+  const selectedCompanyArticle =
+    newsArticles.find(
+      (article) => String(article.id) === String(selectedCompanyArticleId)
+    ) || selectedCompanyArticles[0];
 
   useEffect(() => {
     fetchDashboardData();
@@ -318,8 +385,12 @@ const runAgentForAllArticles = async () => {
       <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/90 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <div>
-            <h1 className="text-xl font-bold tracking-tight">NEPSE Sentiment</h1>
-            <p className="text-sm text-slate-500">Market intelligence dashboard</p>
+            <h1 className="text-xl font-bold tracking-tight">
+              NEPSE Sentiment
+            </h1>
+            <p className="text-sm text-slate-500">
+              Market intelligence dashboard
+            </p>
           </div>
 
           <button
@@ -353,28 +424,101 @@ const runAgentForAllArticles = async () => {
             onAction={calculateMarketSentiment}
           />
 
-          <OverviewCard title="Companies" value={companies.length} subtitle="Listed in database" />
-          <OverviewCard title="Sources" value={sources.length} subtitle="News/data sources" />
-          <OverviewCard title="News Articles" value={newsArticles.length} subtitle="Stored articles" />
+          <OverviewCard
+            title="Companies"
+            value={companies.length}
+            subtitle="Listed in database"
+          />
+          <OverviewCard
+            title="Sources"
+            value={sources.length}
+            subtitle="News/data sources"
+          />
+          <OverviewCard
+            title="News Articles"
+            value={newsArticles.length}
+            subtitle="Stored articles"
+          />
         </section>
 
-        <section className="mt-8 grid gap-6 xl:grid-cols-3">
+        <section className="mt-8 grid gap-6 xl:grid-cols-4">
           <Panel title="Add Company">
             <form onSubmit={createCompany} className="space-y-3">
-              <Input label="Symbol" value={companyForm.symbol} onChange={(value) => setCompanyForm({ ...companyForm, symbol: value })} placeholder="NABIL" required />
-              <Input label="Company Name" value={companyForm.company_name} onChange={(value) => setCompanyForm({ ...companyForm, company_name: value })} placeholder="Nabil Bank Limited" required />
-              <Input label="Sector" value={companyForm.sector} onChange={(value) => setCompanyForm({ ...companyForm, sector: value })} placeholder="Commercial Banks" />
-              <Input label="Website" value={companyForm.website} onChange={(value) => setCompanyForm({ ...companyForm, website: value })} placeholder="https://example.com" />
+              <Input
+                label="Symbol"
+                value={companyForm.symbol}
+                onChange={(value) =>
+                  setCompanyForm({ ...companyForm, symbol: value })
+                }
+                placeholder="NABIL"
+                required
+              />
+              <Input
+                label="Company Name"
+                value={companyForm.company_name}
+                onChange={(value) =>
+                  setCompanyForm({ ...companyForm, company_name: value })
+                }
+                placeholder="Nabil Bank Limited"
+                required
+              />
+              <Input
+                label="Sector"
+                value={companyForm.sector}
+                onChange={(value) =>
+                  setCompanyForm({ ...companyForm, sector: value })
+                }
+                placeholder="Commercial Banks"
+              />
+              <Input
+                label="Website"
+                value={companyForm.website}
+                onChange={(value) =>
+                  setCompanyForm({ ...companyForm, website: value })
+                }
+                placeholder="https://example.com"
+              />
               <PrimaryButton type="submit">Add Company</PrimaryButton>
             </form>
           </Panel>
 
           <Panel title="Add Source">
             <form onSubmit={createSource} className="space-y-3">
-              <Input label="Source ID" value={sourceForm.source_id} onChange={(value) => setSourceForm({ ...sourceForm, source_id: value })} placeholder="onlinekhabar" required />
-              <Input label="Source Name" value={sourceForm.source_name} onChange={(value) => setSourceForm({ ...sourceForm, source_name: value })} placeholder="Onlinekhabar" required />
-              <Input label="Website" value={sourceForm.website} onChange={(value) => setSourceForm({ ...sourceForm, website: value })} placeholder="https://www.onlinekhabar.com" />
-              <Input label="Reliability" type="number" step="0.01" value={sourceForm.reliability_score} onChange={(value) => setSourceForm({ ...sourceForm, reliability_score: value })} />
+              <Input
+                label="Source ID"
+                value={sourceForm.source_id}
+                onChange={(value) =>
+                  setSourceForm({ ...sourceForm, source_id: value })
+                }
+                placeholder="bizmandu"
+                required
+              />
+              <Input
+                label="Source Name"
+                value={sourceForm.source_name}
+                onChange={(value) =>
+                  setSourceForm({ ...sourceForm, source_name: value })
+                }
+                placeholder="Bizmandu"
+                required
+              />
+              <Input
+                label="Website"
+                value={sourceForm.website}
+                onChange={(value) =>
+                  setSourceForm({ ...sourceForm, website: value })
+                }
+                placeholder="https://bizmandu.com"
+              />
+              <Input
+                label="Reliability"
+                type="number"
+                step="0.01"
+                value={sourceForm.reliability_score}
+                onChange={(value) =>
+                  setSourceForm({ ...sourceForm, reliability_score: value })
+                }
+              />
               <PrimaryButton type="submit">Add Source</PrimaryButton>
             </form>
           </Panel>
@@ -392,8 +536,12 @@ const runAgentForAllArticles = async () => {
               />
 
               <div className="grid grid-cols-2 gap-3">
-                <SecondaryButton onClick={mapSelectedArticle}>Map Article</SecondaryButton>
-                <SecondaryButton onClick={detectSelectedArticleSentiment}>Detect Event</SecondaryButton>
+                <SecondaryButton onClick={mapSelectedArticle}>
+                  Map Article
+                </SecondaryButton>
+                <SecondaryButton onClick={detectSelectedArticleSentiment}>
+                  Detect Event
+                </SecondaryButton>
               </div>
 
               <Select
@@ -411,11 +559,13 @@ const runAgentForAllArticles = async () => {
               </SecondaryButton>
 
               <SecondaryButton onClick={runAgentForSelectedArticle}>
-                {isRunningAgent ? "Running Agent..." : "Run Agent for Selected Article"}
+                {isRunningAgent
+                  ? "Running Agent..."
+                  : "Run Agent for Selected Article"}
               </SecondaryButton>
 
               <SecondaryButton onClick={runAgentForAllArticles}>
-                {isRunningAgent ? "Running Agent..." : "Run Agent for All Articles"}
+                {isRunningAgent ? "Running Agent..." : "Run Agent for All"}
               </SecondaryButton>
 
               <PrimaryButton onClick={calculateMarketSentiment}>
@@ -423,28 +573,139 @@ const runAgentForAllArticles = async () => {
               </PrimaryButton>
             </div>
           </Panel>
+
+          <Panel title="Scraping Jobs">
+            <div className="space-y-4">
+              <Select
+                label="Scraper Source"
+                value={scraperSourceId}
+                onChange={setScraperSourceId}
+                options={[
+                  {
+                    value: "bizmandu",
+                    label: "Bizmandu",
+                  },
+                  {
+                    value: "onlinekhabar",
+                    label: "OnlineKhabar",
+                  },
+                ]}
+              />
+
+              <Input
+                label="Limit"
+                type="number"
+                value={scraperLimit}
+                onChange={setScraperLimit}
+                placeholder="10"
+              />
+
+              <label className="flex items-center gap-2 text-sm text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={scraperRunPipeline}
+                  onChange={(event) =>
+                    setScraperRunPipeline(event.target.checked)
+                  }
+                />
+                Run agent pipeline
+              </label>
+
+              <PrimaryButton onClick={runScrapingJob}>Run Scraper</PrimaryButton>
+
+              {scrapeTaskId && (
+                <div className="rounded-2xl bg-slate-50 p-3 text-xs text-slate-600">
+                  <p className="font-medium text-slate-800">Task ID</p>
+                  <p className="mt-1 break-all">{scrapeTaskId}</p>
+                </div>
+              )}
+
+              {scrapeTaskId && (
+                <SecondaryButton onClick={checkScrapingJobStatus}>
+                  Check Job Status
+                </SecondaryButton>
+              )}
+
+              {scrapeJobStatus && (
+                <pre className="max-h-72 overflow-auto rounded-2xl bg-slate-950 p-4 text-xs text-slate-100">
+                  {JSON.stringify(scrapeJobStatus, null, 2)}
+                </pre>
+              )}
+            </div>
+          </Panel>
         </section>
+
+        {agentResult && (
+          <section className="mt-6">
+            <Panel title="Latest Agent Result">
+              <pre className="max-h-96 overflow-auto rounded-2xl bg-slate-950 p-4 text-xs text-slate-100">
+                {JSON.stringify(agentResult, null, 2)}
+              </pre>
+            </Panel>
+          </section>
+        )}
 
         <section className="mt-6">
           <Panel title="Add News Article">
-            <form onSubmit={createNewsArticle} className="grid gap-4 lg:grid-cols-2">
-              <Input label="Title" value={newsForm.title} onChange={(value) => setNewsForm({ ...newsForm, title: value })} placeholder="NABIL announces dividend" required />
+            <form
+              onSubmit={createNewsArticle}
+              className="grid gap-4 lg:grid-cols-2"
+            >
+              <Input
+                label="Title"
+                value={newsForm.title}
+                onChange={(value) =>
+                  setNewsForm({ ...newsForm, title: value })
+                }
+                placeholder="NABIL announces dividend"
+                required
+              />
 
               <Select
                 label="Source"
                 value={newsForm.source_id}
-                onChange={(value) => setNewsForm({ ...newsForm, source_id: value })}
+                onChange={(value) =>
+                  setNewsForm({ ...newsForm, source_id: value })
+                }
                 options={sources.map((source) => ({
                   value: source.source_id,
                   label: source.source_name,
                 }))}
               />
 
-              <Input label="Original URL" value={newsForm.original_url} onChange={(value) => setNewsForm({ ...newsForm, original_url: value })} placeholder="https://example.com/news" />
-              <Input label="Tags" value={newsForm.tags} onChange={(value) => setNewsForm({ ...newsForm, tags: value })} placeholder="dividend, bank, NABIL" />
+              <Input
+                label="Original URL"
+                value={newsForm.original_url}
+                onChange={(value) =>
+                  setNewsForm({ ...newsForm, original_url: value })
+                }
+                placeholder="https://example.com/news"
+              />
+              <Input
+                label="Tags"
+                value={newsForm.tags}
+                onChange={(value) =>
+                  setNewsForm({ ...newsForm, tags: value })
+                }
+                placeholder="dividend, bank, NABIL"
+              />
 
-              <TextArea label="Summary" value={newsForm.summary} onChange={(value) => setNewsForm({ ...newsForm, summary: value })} placeholder="Short summary" />
-              <TextArea label="Content" value={newsForm.content} onChange={(value) => setNewsForm({ ...newsForm, content: value })} placeholder="Full or partial article content" />
+              <TextArea
+                label="Summary"
+                value={newsForm.summary}
+                onChange={(value) =>
+                  setNewsForm({ ...newsForm, summary: value })
+                }
+                placeholder="Short summary"
+              />
+              <TextArea
+                label="Content"
+                value={newsForm.content}
+                onChange={(value) =>
+                  setNewsForm({ ...newsForm, content: value })
+                }
+                placeholder="Full or partial article content"
+              />
 
               <div className="lg:col-span-2">
                 <PrimaryButton type="submit">Add News Article</PrimaryButton>
@@ -463,7 +724,10 @@ const runAgentForAllArticles = async () => {
                   const sentiment = companySentiments[company.symbol];
 
                   return (
-                    <div key={company.id} className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <div
+                      key={company.id}
+                      className="rounded-2xl border border-slate-200 bg-white p-4"
+                    >
                       <div className="flex items-start justify-between gap-4">
                         <div>
                           <div className="flex items-center gap-2">
@@ -472,15 +736,23 @@ const runAgentForAllArticles = async () => {
                               {company.sector || "Unknown"}
                             </span>
                           </div>
-                          <p className="mt-1 text-sm text-slate-600">{company.company_name}</p>
+                          <p className="mt-1 text-sm text-slate-600">
+                            {company.company_name}
+                          </p>
                         </div>
 
                         {sentiment ? (
                           <div className="text-right">
-                            <span className={`inline-flex rounded-full px-3 py-1 text-sm font-bold ring-1 ${getScoreBadgeClass(sentiment.score)}`}>
+                            <span
+                              className={`inline-flex rounded-full px-3 py-1 text-sm font-bold ring-1 ${getScoreBadgeClass(
+                                sentiment.score
+                              )}`}
+                            >
                               {sentiment.score}
                             </span>
-                            <p className="mt-2 max-w-40 text-xs text-slate-500">{sentiment.label}</p>
+                            <p className="mt-2 max-w-40 text-xs text-slate-500">
+                              {sentiment.label}
+                            </p>
                           </div>
                         ) : (
                           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-500">
@@ -501,7 +773,10 @@ const runAgentForAllArticles = async () => {
                 <Empty text="No news articles found." />
               ) : (
                 newsArticles.slice(0, 8).map((article) => (
-                  <div key={article.id} className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <div
+                    key={article.id}
+                    className="rounded-2xl border border-slate-200 bg-white p-4"
+                  >
                     <div className="flex items-start justify-between gap-4">
                       <div>
                         <h3 className="font-semibold">{article.title}</h3>
@@ -523,6 +798,115 @@ const runAgentForAllArticles = async () => {
           </Panel>
         </section>
 
+        <section className="mt-8">
+          <Panel title="Company Content Viewer">
+            <div className="grid gap-6 lg:grid-cols-3">
+              <div className="space-y-4">
+                <Select
+                  label="Company"
+                  value={selectedCompanySymbol}
+                  onChange={(value) => {
+                    setSelectedCompanySymbol(value);
+                    setSelectedCompanyArticleId("");
+                  }}
+                  options={companies.map((company) => ({
+                    value: company.symbol,
+                    label: `${company.symbol} — ${company.company_name}`,
+                  }))}
+                />
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-sm font-semibold text-slate-800">
+                    Mapped Articles
+                  </p>
+                  <p className="mt-1 text-3xl font-bold">
+                    {selectedCompanyArticles.length}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Articles connected to{" "}
+                    {selectedCompanySymbol || "selected company"}
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  {selectedCompanyArticles.length === 0 ? (
+                    <Empty text="No mapped articles found for this company." />
+                  ) : (
+                    selectedCompanyArticles.map((article) => (
+                      <button
+                        key={article.id}
+                        onClick={() =>
+                          setSelectedCompanyArticleId(String(article.id))
+                        }
+                        className={`w-full rounded-2xl border p-3 text-left text-sm transition ${
+                          String(selectedCompanyArticle?.id) ===
+                          String(article.id)
+                            ? "border-slate-900 bg-slate-900 text-white"
+                            : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                        }`}
+                      >
+                        <p className="font-medium">#{article.id}</p>
+                        <p className="mt-1 line-clamp-2">{article.title}</p>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <div className="lg:col-span-2">
+                {selectedCompanyArticle ? (
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">
+                        #{selectedCompanyArticle.id}
+                      </span>
+                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">
+                        {selectedCompanyArticle.source_id || "unknown source"}
+                      </span>
+                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">
+                        {selectedCompanyArticle.language_code ||
+                          "unknown language"}
+                      </span>
+                    </div>
+
+                    <h3 className="mt-4 text-xl font-bold text-slate-900">
+                      {selectedCompanyArticle.title}
+                    </h3>
+
+                    {selectedCompanyArticle.summary && (
+                      <p className="mt-3 rounded-2xl bg-slate-50 p-4 text-sm leading-7 text-slate-700">
+                        {selectedCompanyArticle.summary}
+                      </p>
+                    )}
+
+                    <div className="mt-5 max-h-[520px] overflow-auto rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="whitespace-pre-line text-sm leading-8 text-slate-700">
+                        {selectedCompanyArticle.content ||
+                          "No full content stored."}
+                      </p>
+                    </div>
+
+                    {selectedCompanyArticle.original_url && (
+                      <a
+                        href={selectedCompanyArticle.original_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-4 inline-flex text-sm font-semibold text-slate-900 underline"
+                      >
+                        Open original article
+                      </a>
+                    )}
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                    <Empty text="Select a company and mapped article to view content." />
+                  </div>
+                )}
+              </div>
+            </div>
+          </Panel>
+        </section>
+
         <section className="mt-8 grid gap-6 xl:grid-cols-2">
           <Panel title="Detected Sentiment Events">
             <CompactList
@@ -534,9 +918,12 @@ const runAgentForAllArticles = async () => {
                     Article #{event.article_id} — {event.event_type}
                   </p>
                   <p className="text-sm text-slate-500">
-                    {event.sentiment} · impact {event.impact_score} · confidence {event.confidence}
+                    {event.sentiment} · impact {event.impact_score} ·
+                    confidence {event.confidence}
                   </p>
-                  <p className="mt-1 text-xs text-slate-400">{event.evidence}</p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    {event.evidence}
+                  </p>
                 </div>
               )}
             />
@@ -593,10 +980,20 @@ function Panel({ title, children }) {
   );
 }
 
-function Input({ label, value, onChange, placeholder, type = "text", step, required = false }) {
+function Input({
+  label,
+  value,
+  onChange,
+  placeholder,
+  type = "text",
+  step,
+  required = false,
+}) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs font-medium text-slate-500">{label}</span>
+      <span className="mb-1 block text-xs font-medium text-slate-500">
+        {label}
+      </span>
       <input
         type={type}
         step={step}
@@ -613,7 +1010,9 @@ function Input({ label, value, onChange, placeholder, type = "text", step, requi
 function TextArea({ label, value, onChange, placeholder }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs font-medium text-slate-500">{label}</span>
+      <span className="mb-1 block text-xs font-medium text-slate-500">
+        {label}
+      </span>
       <textarea
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -628,7 +1027,9 @@ function TextArea({ label, value, onChange, placeholder }) {
 function Select({ label, value, onChange, options }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs font-medium text-slate-500">{label}</span>
+      <span className="mb-1 block text-xs font-medium text-slate-500">
+        {label}
+      </span>
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -681,7 +1082,10 @@ function CompactList({ items, emptyText, renderItem }) {
   return (
     <div className="space-y-3">
       {items.map((item) => (
-        <div key={item.id} className="rounded-2xl border border-slate-200 bg-white p-4">
+        <div
+          key={item.id}
+          className="rounded-2xl border border-slate-200 bg-white p-4"
+        >
           {renderItem(item)}
         </div>
       ))}

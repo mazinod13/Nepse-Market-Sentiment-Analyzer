@@ -45,3 +45,18 @@ pnpm-debug.log*
 .idea/
 .DS_Store
 Thumbs.db
+
+# Local/custom libraries
+backend/app/libs/
+backend/libs/
+libs/
+vendor/
+
+# Local downloaded package copies
+NEPSE/
+backend/NEPSE/
+
+# Editable install metadata
+*.egg-info/
+*.dist-info/
+.eggs/
