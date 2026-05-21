@@ -8,6 +8,9 @@ from app.api.market_sentiment_scores import router as market_sentiment_scores_ro
 from app.api.news_articles import router as news_articles_router
 from app.api.sentiment_events import router as sentiment_events_router
 from app.api.sources import router as sources_router
+from app.api.company_aliases import router as company_aliases_router
+from app.api.agent import router as agent_router
+
 from app.core.config import settings
 
 app = FastAPI(
@@ -33,7 +36,8 @@ app.include_router(sentiment_events_router)
 app.include_router(company_sentiment_scores_router)
 app.include_router(article_company_maps_router)
 app.include_router(market_sentiment_scores_router)
-
+app.include_router(company_aliases_router)
+app.include_router(agent_router)
 
 @app.get("/")
 def root():

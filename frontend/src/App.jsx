@@ -53,6 +53,8 @@ function App() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [agentResult, setAgentResult] = useState(null);
+  const [isRunningAgent, setIsRunningAgent] = useState(false);
 
   const showSuccess = (text) => {
     setMessage(text);
@@ -258,6 +260,46 @@ function App() {
       );
     }
   };
+  const runAgentForSelectedArticle = async () => {
+  if (!selectedArticleId) {
+    showError("Select an article first.");
+    return;
+  }
+
+  try {
+    setIsRunningAgent(true);
+    setError("");
+
+    const res = await apiClient.post(`/agent/articles/${selectedArticleId}/run`);
+
+    setAgentResult(res.data);
+    showSuccess("Agent pipeline completed for selected article.");
+
+    await fetchDashboardData();
+  } catch (err) {
+    showError(err.response?.data?.detail || "Could not run agent pipeline.");
+  } finally {
+    setIsRunningAgent(false);
+  }
+};
+
+const runAgentForAllArticles = async () => {
+  try {
+    setIsRunningAgent(true);
+    setError("");
+
+    const res = await apiClient.post("/agent/articles/run-all");
+
+    setAgentResult(res.data);
+    showSuccess("Agent pipeline completed for all articles.");
+
+    await fetchDashboardData();
+  } catch (err) {
+    showError(err.response?.data?.detail || "Could not run agent pipeline.");
+  } finally {
+    setIsRunningAgent(false);
+  }
+};
 
   const getScoreBadgeClass = (score) => {
     if (score >= 80) return "bg-emerald-50 text-emerald-700 ring-emerald-200";
@@ -366,6 +408,14 @@ function App() {
 
               <SecondaryButton onClick={calculateSelectedCompanySentiment}>
                 Calculate Company Sentiment
+              </SecondaryButton>
+
+              <SecondaryButton onClick={runAgentForSelectedArticle}>
+                {isRunningAgent ? "Running Agent..." : "Run Agent for Selected Article"}
+              </SecondaryButton>
+
+              <SecondaryButton onClick={runAgentForAllArticles}>
+                {isRunningAgent ? "Running Agent..." : "Run Agent for All Articles"}
               </SecondaryButton>
 
               <PrimaryButton onClick={calculateMarketSentiment}>

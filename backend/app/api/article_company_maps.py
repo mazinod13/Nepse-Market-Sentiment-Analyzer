@@ -7,7 +7,7 @@ from app.models.company import Company
 from app.models.news_article import NewsArticle
 from app.schemas.article_company_map import ArticleCompanyMapResponse
 from app.services.company_matcher import match_article_to_companies
-
+from app.models.company_alias import CompanyAlias
 
 router = APIRouter(
     prefix="/article-company-maps",
@@ -39,10 +39,12 @@ def match_article_companies(article_id: int, db: Session = Depends(get_db)):
         return existing_maps
 
     companies = db.query(Company).all()
+    aliases = db.query(CompanyAlias).all()
 
     matches = match_article_to_companies(
         article=article,
         companies=companies,
+        aliases=aliases,
     )
 
     saved_maps = []

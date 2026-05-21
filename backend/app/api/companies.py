@@ -27,14 +27,15 @@ def create_company(company_data: CompanyCreate, db: Session = Depends(get_db)):
         )
 
     company = Company(
-        symbol=company_data.symbol.upper(),
-        company_name=company_data.company_name,
-        sector=company_data.sector,
-        instrument=company_data.instrument,
-        email=company_data.email,
-        website=company_data.website,
-        status=company_data.status,
-    )
+    symbol=company_data.symbol.upper(),
+    company_name=company_data.company_name,
+    nepali_name=company_data.nepali_name,
+    sector=company_data.sector,
+    instrument=company_data.instrument,
+    email=company_data.email,
+    website=company_data.website,
+    status=company_data.status,
+)
 
     db.add(company)
     db.commit()

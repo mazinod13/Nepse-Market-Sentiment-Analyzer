@@ -10,6 +10,7 @@ class Company(Base):
     id = Column(Integer, primary_key=True, index=True)
     symbol = Column(String(50), unique=True, nullable=False, index=True)
     company_name = Column(String(255), nullable=False)
+    nepali_name = Column(String(255), nullable=True)
     sector = Column(String(100), nullable=True)
     instrument = Column(String(50), nullable=True)
     email = Column(String(255), nullable=True)
