@@ -9,7 +9,7 @@ class ScrapedArticle(BaseModel):
     source_name: Optional[str] = None
     source_type: Optional[str] = "news_website"
 
-    original_url: str
+    original_url: Optional[str] = None
     title: str
     summary: Optional[str] = None
     content: Optional[str] = None

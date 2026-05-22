@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.core.celery_app import celery_app
-from app.scrapers.registry import SCRAPER_REGISTRY
+from app.scrapers.registry import SCRAPER_REGISTRY, resolve_limit
 from app.tasks.scraping_tasks import scrape_source
 
 
@@ -15,15 +15,13 @@ router = APIRouter(
 
 class ScrapeSourceRequest(BaseModel):
     source_id: str
-    limit: int = 10
+    limit: int = -1       # -1 = use per-scraper default, 0 = all, N = exact
     run_pipeline: bool = True
 
 
 @router.get("/sources")
 def list_available_scrapers():
-    return {
-        "available_scrapers": list(SCRAPER_REGISTRY.keys())
-    }
+    return {"available_scrapers": list(SCRAPER_REGISTRY.keys())}
 
 
 @router.post("/run")
@@ -34,15 +32,12 @@ def run_scraping_job(request: ScrapeSourceRequest):
             detail=f"No scraper found for source_id: {request.source_id}",
         )
 
-    if request.limit < 1 or request.limit > 50:
-        raise HTTPException(
-            status_code=400,
-            detail="Limit must be between 1 and 50",
-        )
+    # resolve_limit handles: 0 → all, -1 → per-scraper default, N → exact
+    resolved = resolve_limit(request.source_id, request.limit)
 
     task = scrape_source.delay(
         source_id=request.source_id,
-        limit=request.limit,
+        limit=resolved,
         run_pipeline=request.run_pipeline,
     )
 
@@ -50,6 +45,7 @@ def run_scraping_job(request: ScrapeSourceRequest):
         "task_id": task.id,
         "status": "queued",
         "source_id": request.source_id,
+        "limit_resolved": resolved,   # handy for debugging
     }
 
 
@@ -57,23 +53,16 @@ def run_scraping_job(request: ScrapeSourceRequest):
 def get_scraping_job_status(task_id: str):
     result = AsyncResult(task_id, app=celery_app)
 
-    response = {
-        "task_id": task_id,
-        "state": result.state,
-    }
+    response = {"task_id": task_id, "state": result.state}
 
     if result.state == "PENDING":
         response["message"] = "Task is waiting or does not exist yet."
-
     elif result.state == "STARTED":
         response["message"] = "Task is running."
-
     elif result.state == "SUCCESS":
         response["result"] = result.result
-
     elif result.state == "FAILURE":
         response["error"] = str(result.result)
-
     else:
         response["message"] = "Task state updated."
 

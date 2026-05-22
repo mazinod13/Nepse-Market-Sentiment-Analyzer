@@ -1,0 +1,8 @@
+{
+    "News_Alerts":"/api/nots/news/media/news-and-alerts",
+    "Corporate_Disclosures":"/api/nots/news/media/company-news",
+    "Financials_reports":"/api/nots/application/reports/",
+    "Agm_reports":"/api/nots/application/agm/",
+    "Dividend_reports":"/api/nots/application/dividend/",
+    "Company_News":"/api/nots/application/company-news/"
+}

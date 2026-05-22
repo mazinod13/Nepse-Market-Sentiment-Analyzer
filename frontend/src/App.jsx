@@ -1,112 +1,95 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import apiClient from "./api/client";
 
-const initialCompanyForm = {
-  symbol: "",
-  company_name: "",
-  sector: "",
-  instrument: "Equity",
-  email: "",
-  website: "",
-  status: "active",
-};
+// Dashboard chrome
+import { Header }               from "./components/dashboard/Header";
+import { AlertBanner }          from "./components/dashboard/AlertBanner";
+import { StatsBar }             from "./components/dashboard/StatsBar";
+import { CompanySentimentList } from "./components/dashboard/CompanySentimentList";
+import { LatestNewsList }       from "./components/dashboard/LatestNewsList";
+import { SentimentEventsPanel, ArticleMapsPanel } from "./components/dashboard/EventsPanels";
+import { CompanyContentViewer } from "./components/dashboard/CompanyContentViewer";
 
-const initialSourceForm = {
-  source_id: "",
-  source_name: "",
-  source_type: "news_website",
-  website: "",
-  language_code: "en",
-  reliability_score: 0.8,
-  is_active: true,
-};
+// Forms
+import { AddCompanyPanel }      from "./components/forms/AddCompanyPanel";
+import { AddSourcePanel }       from "./components/forms/AddSourcePanel";
+import { AddNewsArticlePanel }  from "./components/forms/AddNewsArticlePanel";
 
-const initialNewsForm = {
-  source_id: "",
-  original_url: "",
-  title: "",
-  summary: "",
-  content: "",
-  language_code: "en",
-  author: "",
-  image_url: "",
-  tags: "",
-  status: "draft",
-};
+// Workflow
+import { WorkflowActionsPanel } from "./components/workflow/WorkflowActionsPanel";
+import { ScrapingJobsPanel }    from "./components/workflow/ScrapingJobsPanel";
 
-function App() {
-  const [companies, setCompanies] = useState([]);
-  const [sources, setSources] = useState([]);
-  const [newsArticles, setNewsArticles] = useState([]);
-  const [marketSentiment, setMarketSentiment] = useState(null);
-  const [companySentiments, setCompanySentiments] = useState({});
-  const [sentimentEvents, setSentimentEvents] = useState([]);
-  const [articleMaps, setArticleMaps] = useState([]);
+// Agent
+import { AgentResultPanel }     from "./components/agent/AgentResultPanel";
 
-  const [companyForm, setCompanyForm] = useState(initialCompanyForm);
-  const [sourceForm, setSourceForm] = useState(initialSourceForm);
-  const [newsForm, setNewsForm] = useState(initialNewsForm);
+// ─────────────────────────────────────────────────────────────────────────────
 
-  const [selectedArticleId, setSelectedArticleId] = useState("");
-  const [selectedCompanySymbol, setSelectedCompanySymbol] = useState("");
+export default function App() {
+  // ── Server data ────────────────────────────────────────────────────────────
+  const [companies,        setCompanies]        = useState([]);
+  const [sources,          setSources]          = useState([]);
+  const [newsArticles,     setNewsArticles]      = useState([]);
+  const [marketSentiment,  setMarketSentiment]   = useState(null);
+  const [companySentiments,setCompanySentiments] = useState({});
+  const [sentimentEvents,  setSentimentEvents]   = useState([]);
+  const [articleMaps,      setArticleMaps]       = useState([]);
 
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  const [agentResult, setAgentResult] = useState(null);
-  const [isRunningAgent, setIsRunningAgent] = useState(false);
-
-  const [scraperSourceId, setScraperSourceId] = useState("bizmandu");
-  const [scraperLimit, setScraperLimit] = useState(10);
-  const [scraperRunPipeline, setScraperRunPipeline] = useState(true);
-  const [scrapeTaskId, setScrapeTaskId] = useState("");
-  const [scrapeJobStatus, setScrapeJobStatus] = useState(null);
-
+  // ── UI / selection state ───────────────────────────────────────────────────
+  const [selectedArticleId,        setSelectedArticleId]        = useState("");
+  const [selectedCompanySymbol,    setSelectedCompanySymbol]    = useState("");
   const [selectedCompanyArticleId, setSelectedCompanyArticleId] = useState("");
 
-  const showSuccess = (text) => {
-    setMessage(text);
-    setError("");
-  };
+  // ── Feedback ───────────────────────────────────────────────────────────────
+  const [message, setMessage] = useState("");
+  const [error,   setError]   = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const showError = (text) => {
-    setError(text);
-    setMessage("");
-  };
+  // ── Agent ──────────────────────────────────────────────────────────────────
+  const [agentResult,    setAgentResult]    = useState(null);
+  const [isRunningAgent, setIsRunningAgent] = useState(false);
 
-  const fetchCompanySentiments = async (companyList) => {
-    const sentimentMap = {};
+  // ── Scraping job ───────────────────────────────────────────────────────────
+  const [scrapeTaskId,    setScrapeTaskId]    = useState("");
+  const [scrapeJobStatus, setScrapeJobStatus] = useState(null);
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // Helpers
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const ok  = (text) => { setMessage(text); setError(""); };
+  const err = (text) => { setError(text);   setMessage(""); };
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Data fetching
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const fetchCompanySentiments = useCallback(async (companyList) => {
+    const map = {};
     await Promise.all(
       companyList.map(async (company) => {
         try {
-          const res = await apiClient.get(
-            `/sentiment/company/${company.symbol}/latest`
-          );
-          sentimentMap[company.symbol] = res.data;
+          const res = await apiClient.get(`/sentiment/company/${company.symbol}/latest`);
+          map[company.symbol] = res.data;
         } catch {
-          sentimentMap[company.symbol] = null;
+          map[company.symbol] = null;
         }
       })
     );
+    setCompanySentiments(map);
+  }, []);
 
-    setCompanySentiments(sentimentMap);
-  };
-
-  const fetchDashboardData = async () => {
+  const fetchDashboardData = useCallback(async () => {
     try {
       setLoading(true);
       setError("");
 
-      const [companiesRes, sourcesRes, newsRes, eventsRes, mapsRes] =
-        await Promise.all([
-          apiClient.get("/companies/"),
-          apiClient.get("/sources/"),
-          apiClient.get("/news/"),
-          apiClient.get("/sentiment-events/"),
-          apiClient.get("/article-company-maps/"),
-        ]);
+      const [companiesRes, sourcesRes, newsRes, eventsRes, mapsRes] = await Promise.all([
+        apiClient.get("/companies/"),
+        apiClient.get("/sources/"),
+        apiClient.get("/news/"),
+        apiClient.get("/sentiment-events/"),
+        apiClient.get("/article-company-maps/"),
+      ]);
 
       setCompanies(companiesRes.data);
       setSources(sourcesRes.data);
@@ -119,978 +102,242 @@ function App() {
       if (companiesRes.data.length > 0 && !selectedCompanySymbol) {
         setSelectedCompanySymbol(companiesRes.data[0].symbol);
       }
-
       if (newsRes.data.length > 0 && !selectedArticleId) {
         setSelectedArticleId(String(newsRes.data[0].id));
       }
 
       try {
-        const marketRes = await apiClient.get("/sentiment/market/latest");
-        setMarketSentiment(marketRes.data);
+        const mktRes = await apiClient.get("/sentiment/market/latest");
+        setMarketSentiment(mktRes.data);
       } catch {
         setMarketSentiment(null);
       }
     } catch {
-      showError("Could not load dashboard data. Make sure FastAPI is running.");
+      err("Could not load dashboard data. Make sure FastAPI is running.");
     } finally {
       setLoading(false);
     }
-  };
+  }, [fetchCompanySentiments, selectedCompanySymbol, selectedArticleId]);
 
-  const runScrapingJob = async () => {
+  useEffect(() => { fetchDashboardData(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Form submit handlers
+  // ─────────────────────────────────────────────────────────────────────────
+
+  async function handleAddCompany(payload) {
+    try {
+      await apiClient.post("/companies/", payload);
+      ok("Company added successfully.");
+      await fetchDashboardData();
+    } catch (e) {
+      err(e.response?.data?.detail || "Could not add company.");
+    }
+  }
+
+  async function handleAddSource(payload) {
+    try {
+      await apiClient.post("/sources/", payload);
+      ok("Source added successfully.");
+      await fetchDashboardData();
+    } catch (e) {
+      err(e.response?.data?.detail || "Could not add source.");
+    }
+  }
+
+  async function handleAddNewsArticle(payload) {
+    try {
+      await apiClient.post("/news/", payload);
+      ok("News article added successfully.");
+      await fetchDashboardData();
+    } catch (e) {
+      err(e.response?.data?.detail || "Could not add news article.");
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Workflow actions
+  // ─────────────────────────────────────────────────────────────────────────
+
+  async function handleMapArticle() {
+    if (!selectedArticleId) { err("Select an article first."); return; }
+    try {
+      await apiClient.post(`/article-company-maps/match/${selectedArticleId}`);
+      ok("Article-company mapping completed.");
+      await fetchDashboardData();
+    } catch (e) { err(e.response?.data?.detail || "Could not map article."); }
+  }
+
+  async function handleDetectSentiment() {
+    if (!selectedArticleId) { err("Select an article first."); return; }
+    try {
+      await apiClient.post(`/sentiment-events/detect/${selectedArticleId}`);
+      ok("Sentiment events detected.");
+      await fetchDashboardData();
+    } catch (e) { err(e.response?.data?.detail || "Could not detect sentiment."); }
+  }
+
+  async function handleCalculateCompanySentiment() {
+    if (!selectedCompanySymbol) { err("Select a company first."); return; }
+    try {
+      await apiClient.post(`/sentiment/company/${selectedCompanySymbol}/calculate`);
+      ok("Company sentiment calculated.");
+      await fetchDashboardData();
+    } catch (e) { err(e.response?.data?.detail || "Could not calculate company sentiment."); }
+  }
+
+  async function handleCalculateMarketSentiment() {
+    try {
+      const res = await apiClient.post("/sentiment/market/calculate");
+      setMarketSentiment(res.data);
+      ok("Market sentiment calculated.");
+      await fetchDashboardData();
+    } catch (e) { err(e.response?.data?.detail || "Could not calculate market sentiment."); }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Agent
+  // ─────────────────────────────────────────────────────────────────────────
+
+  async function handleRunAgentForArticle() {
+    if (!selectedArticleId) { err("Select an article first."); return; }
+    try {
+      setIsRunningAgent(true);
+      setError("");
+      const res = await apiClient.post(`/agent/articles/${selectedArticleId}/run`);
+      setAgentResult(res.data);
+      ok("Agent pipeline completed for selected article.");
+      await fetchDashboardData();
+    } catch (e) { err(e.response?.data?.detail || "Could not run agent pipeline."); }
+    finally { setIsRunningAgent(false); }
+  }
+
+  async function handleRunAgentForAll() {
+    try {
+      setIsRunningAgent(true);
+      setError("");
+      const res = await apiClient.post("/agent/articles/run-all");
+      setAgentResult(res.data);
+      ok("Agent pipeline completed for all articles.");
+      await fetchDashboardData();
+    } catch (e) { err(e.response?.data?.detail || "Could not run agent pipeline."); }
+    finally { setIsRunningAgent(false); }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Scraping
+  // ─────────────────────────────────────────────────────────────────────────
+
+  async function handleRunScraper({ source_id, limit, run_pipeline }) {
     try {
       setError("");
       setMessage("");
       setScrapeJobStatus(null);
-
-      const res = await apiClient.post("/scraping-jobs/run", {
-        source_id: scraperSourceId,
-        limit: Number(scraperLimit),
-        run_pipeline: scraperRunPipeline,
-      });
-
+      const res = await apiClient.post("/scraping-jobs/run", { source_id, limit, run_pipeline });
       setScrapeTaskId(res.data.task_id);
-      showSuccess(`Scraping job queued. Task ID: ${res.data.task_id}`);
-    } catch (err) {
-      showError(err.response?.data?.detail || "Could not start scraping job.");
-    }
-  };
+      ok(`Scraping job queued. Task ID: ${res.data.task_id}`);
+    } catch (e) { err(e.response?.data?.detail || "Could not start scraping job."); }
+  }
 
-  const checkScrapingJobStatus = async () => {
-    if (!scrapeTaskId) {
-      showError("No scraping task ID found.");
-      return;
-    }
-
+  async function handleCheckScrapingStatus() {
+    if (!scrapeTaskId) { err("No scraping task ID found."); return; }
     try {
       const res = await apiClient.get(`/scraping-jobs/${scrapeTaskId}`);
       setScrapeJobStatus(res.data);
-
       if (res.data.state === "SUCCESS") {
-        showSuccess("Scraping job completed.");
+        ok("Scraping job completed.");
         await fetchDashboardData();
       } else if (res.data.state === "FAILURE") {
-        showError("Scraping job failed.");
+        err("Scraping job failed.");
       }
-    } catch (err) {
-      showError(err.response?.data?.detail || "Could not check scraping job.");
-    }
-  };
+    } catch (e) { err(e.response?.data?.detail || "Could not check scraping job."); }
+  }
 
-  const createCompany = async (event) => {
-    event.preventDefault();
-
-    try {
-      const payload = {
-        ...companyForm,
-        symbol: companyForm.symbol.toUpperCase(),
-        email: companyForm.email || null,
-        website: companyForm.website || null,
-      };
-
-      await apiClient.post("/companies/", payload);
-      setCompanyForm(initialCompanyForm);
-      showSuccess("Company added successfully.");
-      await fetchDashboardData();
-    } catch (err) {
-      showError(err.response?.data?.detail || "Could not add company.");
-    }
-  };
-
-  const createSource = async (event) => {
-    event.preventDefault();
-
-    try {
-      const payload = {
-        ...sourceForm,
-        source_id: sourceForm.source_id.toLowerCase(),
-        reliability_score: Number(sourceForm.reliability_score),
-      };
-
-      await apiClient.post("/sources/", payload);
-      setSourceForm(initialSourceForm);
-      showSuccess("Source added successfully.");
-      await fetchDashboardData();
-    } catch (err) {
-      showError(err.response?.data?.detail || "Could not add source.");
-    }
-  };
-
-  const createNewsArticle = async (event) => {
-    event.preventDefault();
-
-    try {
-      const payload = {
-        source_id: newsForm.source_id || null,
-        original_url: newsForm.original_url || null,
-        title: newsForm.title,
-        summary: newsForm.summary || null,
-        content: newsForm.content || null,
-        language_code: newsForm.language_code || null,
-        published_at: new Date().toISOString(),
-        author: newsForm.author || null,
-        image_url: newsForm.image_url || null,
-        tags: newsForm.tags
-          ? newsForm.tags.split(",").map((tag) => tag.trim())
-          : [],
-        raw_data: {
-          created_from_dashboard: true,
-        },
-        status: newsForm.status,
-      };
-
-      await apiClient.post("/news/", payload);
-      setNewsForm(initialNewsForm);
-      showSuccess("News article added successfully.");
-      await fetchDashboardData();
-    } catch (err) {
-      showError(err.response?.data?.detail || "Could not add news article.");
-    }
-  };
-
-  const mapSelectedArticle = async () => {
-    if (!selectedArticleId) {
-      showError("Select an article first.");
-      return;
-    }
-
-    try {
-      await apiClient.post(`/article-company-maps/match/${selectedArticleId}`);
-      showSuccess("Article-company mapping completed.");
-      await fetchDashboardData();
-    } catch (err) {
-      showError(err.response?.data?.detail || "Could not map article.");
-    }
-  };
-
-  const detectSelectedArticleSentiment = async () => {
-    if (!selectedArticleId) {
-      showError("Select an article first.");
-      return;
-    }
-
-    try {
-      await apiClient.post(`/sentiment-events/detect/${selectedArticleId}`);
-      showSuccess("Sentiment events detected.");
-      await fetchDashboardData();
-    } catch (err) {
-      showError(err.response?.data?.detail || "Could not detect sentiment.");
-    }
-  };
-
-  const calculateSelectedCompanySentiment = async () => {
-    if (!selectedCompanySymbol) {
-      showError("Select a company first.");
-      return;
-    }
-
-    try {
-      await apiClient.post(
-        `/sentiment/company/${selectedCompanySymbol}/calculate`
-      );
-      showSuccess("Company sentiment calculated.");
-      await fetchDashboardData();
-    } catch (err) {
-      showError(
-        err.response?.data?.detail || "Could not calculate company sentiment."
-      );
-    }
-  };
-
-  const calculateMarketSentiment = async () => {
-    try {
-      const res = await apiClient.post("/sentiment/market/calculate");
-      setMarketSentiment(res.data);
-      showSuccess("Market sentiment calculated.");
-      await fetchDashboardData();
-    } catch (err) {
-      showError(
-        err.response?.data?.detail || "Could not calculate market sentiment."
-      );
-    }
-  };
-
-  const runAgentForSelectedArticle = async () => {
-    if (!selectedArticleId) {
-      showError("Select an article first.");
-      return;
-    }
-
-    try {
-      setIsRunningAgent(true);
-      setError("");
-
-      const res = await apiClient.post(
-        `/agent/articles/${selectedArticleId}/run`
-      );
-
-      setAgentResult(res.data);
-      showSuccess("Agent pipeline completed for selected article.");
-
-      await fetchDashboardData();
-    } catch (err) {
-      showError(err.response?.data?.detail || "Could not run agent pipeline.");
-    } finally {
-      setIsRunningAgent(false);
-    }
-  };
-
-  const runAgentForAllArticles = async () => {
-    try {
-      setIsRunningAgent(true);
-      setError("");
-
-      const res = await apiClient.post("/agent/articles/run-all");
-
-      setAgentResult(res.data);
-      showSuccess("Agent pipeline completed for all articles.");
-
-      await fetchDashboardData();
-    } catch (err) {
-      showError(err.response?.data?.detail || "Could not run agent pipeline.");
-    } finally {
-      setIsRunningAgent(false);
-    }
-  };
-
-  const getScoreBadgeClass = (score) => {
-    if (score >= 80) return "bg-emerald-50 text-emerald-700 ring-emerald-200";
-    if (score >= 60) return "bg-green-50 text-green-700 ring-green-200";
-    if (score >= 40) return "bg-slate-50 text-slate-700 ring-slate-200";
-    if (score >= 20) return "bg-orange-50 text-orange-700 ring-orange-200";
-    return "bg-red-50 text-red-700 ring-red-200";
-  };
-
-  const selectedCompanyMaps = articleMaps.filter(
-    (item) => item.company_symbol === selectedCompanySymbol
-  );
-
-  const selectedCompanyArticles = selectedCompanyMaps
-    .map((mapItem) =>
-      newsArticles.find((article) => article.id === mapItem.article_id)
-    )
-    .filter(Boolean);
-
-  const selectedCompanyArticle =
-    newsArticles.find(
-      (article) => String(article.id) === String(selectedCompanyArticleId)
-    ) || selectedCompanyArticles[0];
-
-  useEffect(() => {
-    fetchDashboardData();
-  }, []);
+  // ─────────────────────────────────────────────────────────────────────────
+  // Render
+  // ─────────────────────────────────────────────────────────────────────────
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
-      <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-          <div>
-            <h1 className="text-xl font-bold tracking-tight">
-              NEPSE Sentiment
-            </h1>
-            <p className="text-sm text-slate-500">
-              Market intelligence dashboard
-            </p>
-          </div>
 
-          <button
-            onClick={fetchDashboardData}
-            className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
-          >
-            {loading ? "Refreshing..." : "Refresh"}
-          </button>
-        </div>
-      </header>
+      <Header loading={loading} onRefresh={fetchDashboardData} />
 
-      <main className="mx-auto max-w-7xl px-6 py-8">
-        {message && (
-          <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-            {message}
-          </div>
-        )}
+      <main className="mx-auto max-w-7xl px-6 py-8 space-y-8">
 
-        {error && (
-          <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {error}
-          </div>
-        )}
+        <AlertBanner message={message} error={error} />
 
-        <section className="grid gap-5 md:grid-cols-4">
-          <OverviewCard
-            title="Market Sentiment"
-            value={marketSentiment?.score ?? "—"}
-            subtitle={marketSentiment?.label || "No market score yet"}
-            actionLabel="Calculate"
-            onAction={calculateMarketSentiment}
+        {/* ── Stats row ─────────────────────────────────────────────────── */}
+        <StatsBar
+          marketSentiment={marketSentiment}
+          companies={companies}
+          sources={sources}
+          newsArticles={newsArticles}
+          onCalculateMarket={handleCalculateMarketSentiment}
+        />
+
+        {/* ── Action panels row ─────────────────────────────────────────── */}
+        <section className="grid gap-6 xl:grid-cols-4">
+          <AddCompanyPanel onSubmit={handleAddCompany} />
+
+          <AddSourcePanel onSubmit={handleAddSource} />
+
+          <WorkflowActionsPanel
+            newsArticles={newsArticles}
+            companies={companies}
+            selectedArticleId={selectedArticleId}
+            setSelectedArticleId={setSelectedArticleId}
+            selectedCompanySymbol={selectedCompanySymbol}
+            setSelectedCompanySymbol={setSelectedCompanySymbol}
+            isRunningAgent={isRunningAgent}
+            onMapArticle={handleMapArticle}
+            onDetectSentiment={handleDetectSentiment}
+            onCalculateCompanySentiment={handleCalculateCompanySentiment}
+            onCalculateMarketSentiment={handleCalculateMarketSentiment}
+            onRunAgentForArticle={handleRunAgentForArticle}
+            onRunAgentForAll={handleRunAgentForAll}
           />
 
-          <OverviewCard
-            title="Companies"
-            value={companies.length}
-            subtitle="Listed in database"
-          />
-          <OverviewCard
-            title="Sources"
-            value={sources.length}
-            subtitle="News/data sources"
-          />
-          <OverviewCard
-            title="News Articles"
-            value={newsArticles.length}
-            subtitle="Stored articles"
+          <ScrapingJobsPanel
+            scrapeTaskId={scrapeTaskId}
+            scrapeJobStatus={scrapeJobStatus}
+            onRunScraper={handleRunScraper}
+            onCheckStatus={handleCheckScrapingStatus}
           />
         </section>
 
-        <section className="mt-8 grid gap-6 xl:grid-cols-4">
-          <Panel title="Add Company">
-            <form onSubmit={createCompany} className="space-y-3">
-              <Input
-                label="Symbol"
-                value={companyForm.symbol}
-                onChange={(value) =>
-                  setCompanyForm({ ...companyForm, symbol: value })
-                }
-                placeholder="NABIL"
-                required
-              />
-              <Input
-                label="Company Name"
-                value={companyForm.company_name}
-                onChange={(value) =>
-                  setCompanyForm({ ...companyForm, company_name: value })
-                }
-                placeholder="Nabil Bank Limited"
-                required
-              />
-              <Input
-                label="Sector"
-                value={companyForm.sector}
-                onChange={(value) =>
-                  setCompanyForm({ ...companyForm, sector: value })
-                }
-                placeholder="Commercial Banks"
-              />
-              <Input
-                label="Website"
-                value={companyForm.website}
-                onChange={(value) =>
-                  setCompanyForm({ ...companyForm, website: value })
-                }
-                placeholder="https://example.com"
-              />
-              <PrimaryButton type="submit">Add Company</PrimaryButton>
-            </form>
-          </Panel>
+        {/* ── Agent result ──────────────────────────────────────────────── */}
+        <AgentResultPanel agentResult={agentResult} />
 
-          <Panel title="Add Source">
-            <form onSubmit={createSource} className="space-y-3">
-              <Input
-                label="Source ID"
-                value={sourceForm.source_id}
-                onChange={(value) =>
-                  setSourceForm({ ...sourceForm, source_id: value })
-                }
-                placeholder="bizmandu"
-                required
-              />
-              <Input
-                label="Source Name"
-                value={sourceForm.source_name}
-                onChange={(value) =>
-                  setSourceForm({ ...sourceForm, source_name: value })
-                }
-                placeholder="Bizmandu"
-                required
-              />
-              <Input
-                label="Website"
-                value={sourceForm.website}
-                onChange={(value) =>
-                  setSourceForm({ ...sourceForm, website: value })
-                }
-                placeholder="https://bizmandu.com"
-              />
-              <Input
-                label="Reliability"
-                type="number"
-                step="0.01"
-                value={sourceForm.reliability_score}
-                onChange={(value) =>
-                  setSourceForm({ ...sourceForm, reliability_score: value })
-                }
-              />
-              <PrimaryButton type="submit">Add Source</PrimaryButton>
-            </form>
-          </Panel>
+        {/* ── Add news article (full width) ─────────────────────────────── */}
+        <AddNewsArticlePanel sources={sources} onSubmit={handleAddNewsArticle} />
 
-          <Panel title="Workflow Actions">
-            <div className="space-y-4">
-              <Select
-                label="Article"
-                value={selectedArticleId}
-                onChange={setSelectedArticleId}
-                options={newsArticles.map((article) => ({
-                  value: String(article.id),
-                  label: `#${article.id} — ${article.title}`,
-                }))}
-              />
-
-              <div className="grid grid-cols-2 gap-3">
-                <SecondaryButton onClick={mapSelectedArticle}>
-                  Map Article
-                </SecondaryButton>
-                <SecondaryButton onClick={detectSelectedArticleSentiment}>
-                  Detect Event
-                </SecondaryButton>
-              </div>
-
-              <Select
-                label="Company"
-                value={selectedCompanySymbol}
-                onChange={setSelectedCompanySymbol}
-                options={companies.map((company) => ({
-                  value: company.symbol,
-                  label: `${company.symbol} — ${company.company_name}`,
-                }))}
-              />
-
-              <SecondaryButton onClick={calculateSelectedCompanySentiment}>
-                Calculate Company Sentiment
-              </SecondaryButton>
-
-              <SecondaryButton onClick={runAgentForSelectedArticle}>
-                {isRunningAgent
-                  ? "Running Agent..."
-                  : "Run Agent for Selected Article"}
-              </SecondaryButton>
-
-              <SecondaryButton onClick={runAgentForAllArticles}>
-                {isRunningAgent ? "Running Agent..." : "Run Agent for All"}
-              </SecondaryButton>
-
-              <PrimaryButton onClick={calculateMarketSentiment}>
-                Calculate Market Sentiment
-              </PrimaryButton>
-            </div>
-          </Panel>
-
-          <Panel title="Scraping Jobs">
-            <div className="space-y-4">
-              <Select
-                label="Scraper Source"
-                value={scraperSourceId}
-                onChange={setScraperSourceId}
-                options={[
-                  {
-                    value: "bizmandu",
-                    label: "Bizmandu",
-                  },
-                  {
-                    value: "onlinekhabar",
-                    label: "OnlineKhabar",
-                  },
-                ]}
-              />
-
-              <Input
-                label="Limit"
-                type="number"
-                value={scraperLimit}
-                onChange={setScraperLimit}
-                placeholder="10"
-              />
-
-              <label className="flex items-center gap-2 text-sm text-slate-600">
-                <input
-                  type="checkbox"
-                  checked={scraperRunPipeline}
-                  onChange={(event) =>
-                    setScraperRunPipeline(event.target.checked)
-                  }
-                />
-                Run agent pipeline
-              </label>
-
-              <PrimaryButton onClick={runScrapingJob}>Run Scraper</PrimaryButton>
-
-              {scrapeTaskId && (
-                <div className="rounded-2xl bg-slate-50 p-3 text-xs text-slate-600">
-                  <p className="font-medium text-slate-800">Task ID</p>
-                  <p className="mt-1 break-all">{scrapeTaskId}</p>
-                </div>
-              )}
-
-              {scrapeTaskId && (
-                <SecondaryButton onClick={checkScrapingJobStatus}>
-                  Check Job Status
-                </SecondaryButton>
-              )}
-
-              {scrapeJobStatus && (
-                <pre className="max-h-72 overflow-auto rounded-2xl bg-slate-950 p-4 text-xs text-slate-100">
-                  {JSON.stringify(scrapeJobStatus, null, 2)}
-                </pre>
-              )}
-            </div>
-          </Panel>
+        {/* ── Sentiment + news feed ─────────────────────────────────────── */}
+        <section className="grid gap-6 xl:grid-cols-2">
+          <CompanySentimentList
+            companies={companies}
+            companySentiments={companySentiments}
+          />
+          <LatestNewsList newsArticles={newsArticles} />
         </section>
 
-        {agentResult && (
-          <section className="mt-6">
-            <Panel title="Latest Agent Result">
-              <pre className="max-h-96 overflow-auto rounded-2xl bg-slate-950 p-4 text-xs text-slate-100">
-                {JSON.stringify(agentResult, null, 2)}
-              </pre>
-            </Panel>
-          </section>
-        )}
+        {/* ── Company content viewer ────────────────────────────────────── */}
+        <CompanyContentViewer
+          companies={companies}
+          newsArticles={newsArticles}
+          articleMaps={articleMaps}
+          selectedCompanySymbol={selectedCompanySymbol}
+          setSelectedCompanySymbol={setSelectedCompanySymbol}
+          selectedCompanyArticleId={selectedCompanyArticleId}
+          setSelectedCompanyArticleId={setSelectedCompanyArticleId}
+        />
 
-        <section className="mt-6">
-          <Panel title="Add News Article">
-            <form
-              onSubmit={createNewsArticle}
-              className="grid gap-4 lg:grid-cols-2"
-            >
-              <Input
-                label="Title"
-                value={newsForm.title}
-                onChange={(value) =>
-                  setNewsForm({ ...newsForm, title: value })
-                }
-                placeholder="NABIL announces dividend"
-                required
-              />
-
-              <Select
-                label="Source"
-                value={newsForm.source_id}
-                onChange={(value) =>
-                  setNewsForm({ ...newsForm, source_id: value })
-                }
-                options={sources.map((source) => ({
-                  value: source.source_id,
-                  label: source.source_name,
-                }))}
-              />
-
-              <Input
-                label="Original URL"
-                value={newsForm.original_url}
-                onChange={(value) =>
-                  setNewsForm({ ...newsForm, original_url: value })
-                }
-                placeholder="https://example.com/news"
-              />
-              <Input
-                label="Tags"
-                value={newsForm.tags}
-                onChange={(value) =>
-                  setNewsForm({ ...newsForm, tags: value })
-                }
-                placeholder="dividend, bank, NABIL"
-              />
-
-              <TextArea
-                label="Summary"
-                value={newsForm.summary}
-                onChange={(value) =>
-                  setNewsForm({ ...newsForm, summary: value })
-                }
-                placeholder="Short summary"
-              />
-              <TextArea
-                label="Content"
-                value={newsForm.content}
-                onChange={(value) =>
-                  setNewsForm({ ...newsForm, content: value })
-                }
-                placeholder="Full or partial article content"
-              />
-
-              <div className="lg:col-span-2">
-                <PrimaryButton type="submit">Add News Article</PrimaryButton>
-              </div>
-            </form>
-          </Panel>
+        {/* ── Events + mappings ─────────────────────────────────────────── */}
+        <section className="grid gap-6 xl:grid-cols-2">
+          <SentimentEventsPanel sentimentEvents={sentimentEvents} />
+          <ArticleMapsPanel     articleMaps={articleMaps} />
         </section>
 
-        <section className="mt-8 grid gap-6 xl:grid-cols-2">
-          <Panel title="Company Sentiment">
-            <div className="space-y-3">
-              {companies.length === 0 ? (
-                <Empty text="No companies found." />
-              ) : (
-                companies.map((company) => {
-                  const sentiment = companySentiments[company.symbol];
-
-                  return (
-                    <div
-                      key={company.id}
-                      className="rounded-2xl border border-slate-200 bg-white p-4"
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h3 className="font-semibold">{company.symbol}</h3>
-                            <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-500">
-                              {company.sector || "Unknown"}
-                            </span>
-                          </div>
-                          <p className="mt-1 text-sm text-slate-600">
-                            {company.company_name}
-                          </p>
-                        </div>
-
-                        {sentiment ? (
-                          <div className="text-right">
-                            <span
-                              className={`inline-flex rounded-full px-3 py-1 text-sm font-bold ring-1 ${getScoreBadgeClass(
-                                sentiment.score
-                              )}`}
-                            >
-                              {sentiment.score}
-                            </span>
-                            <p className="mt-2 max-w-40 text-xs text-slate-500">
-                              {sentiment.label}
-                            </p>
-                          </div>
-                        ) : (
-                          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-500">
-                            No score
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </Panel>
-
-          <Panel title="Latest News">
-            <div className="space-y-3">
-              {newsArticles.length === 0 ? (
-                <Empty text="No news articles found." />
-              ) : (
-                newsArticles.slice(0, 8).map((article) => (
-                  <div
-                    key={article.id}
-                    className="rounded-2xl border border-slate-200 bg-white p-4"
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <h3 className="font-semibold">{article.title}</h3>
-                        <p className="mt-1 text-sm text-slate-600">
-                          {article.summary || "No summary available"}
-                        </p>
-                      </div>
-                      <span className="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-500">
-                        #{article.id}
-                      </span>
-                    </div>
-                    <p className="mt-3 text-xs text-slate-400">
-                      Source: {article.source_id || "unknown"}
-                    </p>
-                  </div>
-                ))
-              )}
-            </div>
-          </Panel>
-        </section>
-
-        <section className="mt-8">
-          <Panel title="Company Content Viewer">
-            <div className="grid gap-6 lg:grid-cols-3">
-              <div className="space-y-4">
-                <Select
-                  label="Company"
-                  value={selectedCompanySymbol}
-                  onChange={(value) => {
-                    setSelectedCompanySymbol(value);
-                    setSelectedCompanyArticleId("");
-                  }}
-                  options={companies.map((company) => ({
-                    value: company.symbol,
-                    label: `${company.symbol} — ${company.company_name}`,
-                  }))}
-                />
-
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-sm font-semibold text-slate-800">
-                    Mapped Articles
-                  </p>
-                  <p className="mt-1 text-3xl font-bold">
-                    {selectedCompanyArticles.length}
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Articles connected to{" "}
-                    {selectedCompanySymbol || "selected company"}
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  {selectedCompanyArticles.length === 0 ? (
-                    <Empty text="No mapped articles found for this company." />
-                  ) : (
-                    selectedCompanyArticles.map((article) => (
-                      <button
-                        key={article.id}
-                        onClick={() =>
-                          setSelectedCompanyArticleId(String(article.id))
-                        }
-                        className={`w-full rounded-2xl border p-3 text-left text-sm transition ${
-                          String(selectedCompanyArticle?.id) ===
-                          String(article.id)
-                            ? "border-slate-900 bg-slate-900 text-white"
-                            : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                        }`}
-                      >
-                        <p className="font-medium">#{article.id}</p>
-                        <p className="mt-1 line-clamp-2">{article.title}</p>
-                      </button>
-                    ))
-                  )}
-                </div>
-              </div>
-
-              <div className="lg:col-span-2">
-                {selectedCompanyArticle ? (
-                  <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">
-                        #{selectedCompanyArticle.id}
-                      </span>
-                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">
-                        {selectedCompanyArticle.source_id || "unknown source"}
-                      </span>
-                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">
-                        {selectedCompanyArticle.language_code ||
-                          "unknown language"}
-                      </span>
-                    </div>
-
-                    <h3 className="mt-4 text-xl font-bold text-slate-900">
-                      {selectedCompanyArticle.title}
-                    </h3>
-
-                    {selectedCompanyArticle.summary && (
-                      <p className="mt-3 rounded-2xl bg-slate-50 p-4 text-sm leading-7 text-slate-700">
-                        {selectedCompanyArticle.summary}
-                      </p>
-                    )}
-
-                    <div className="mt-5 max-h-[520px] overflow-auto rounded-2xl border border-slate-200 bg-white p-4">
-                      <p className="whitespace-pre-line text-sm leading-8 text-slate-700">
-                        {selectedCompanyArticle.content ||
-                          "No full content stored."}
-                      </p>
-                    </div>
-
-                    {selectedCompanyArticle.original_url && (
-                      <a
-                        href={selectedCompanyArticle.original_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="mt-4 inline-flex text-sm font-semibold text-slate-900 underline"
-                      >
-                        Open original article
-                      </a>
-                    )}
-                  </div>
-                ) : (
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
-                    <Empty text="Select a company and mapped article to view content." />
-                  </div>
-                )}
-              </div>
-            </div>
-          </Panel>
-        </section>
-
-        <section className="mt-8 grid gap-6 xl:grid-cols-2">
-          <Panel title="Detected Sentiment Events">
-            <CompactList
-              items={sentimentEvents.slice(0, 8)}
-              emptyText="No sentiment events detected yet."
-              renderItem={(event) => (
-                <div>
-                  <p className="font-medium">
-                    Article #{event.article_id} — {event.event_type}
-                  </p>
-                  <p className="text-sm text-slate-500">
-                    {event.sentiment} · impact {event.impact_score} ·
-                    confidence {event.confidence}
-                  </p>
-                  <p className="mt-1 text-xs text-slate-400">
-                    {event.evidence}
-                  </p>
-                </div>
-              )}
-            />
-          </Panel>
-
-          <Panel title="Article Company Mappings">
-            <CompactList
-              items={articleMaps.slice(0, 8)}
-              emptyText="No article-company mappings yet."
-              renderItem={(item) => (
-                <div>
-                  <p className="font-medium">
-                    Article #{item.article_id} → {item.company_symbol}
-                  </p>
-                  <p className="text-sm text-slate-500">
-                    {item.match_type} · confidence {item.confidence}
-                  </p>
-                </div>
-              )}
-            />
-          </Panel>
-        </section>
       </main>
     </div>
   );
 }
-
-function OverviewCard({ title, value, subtitle, actionLabel, onAction }) {
-  return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <p className="text-sm font-medium text-slate-500">{title}</p>
-        {actionLabel && (
-          <button
-            onClick={onAction}
-            className="rounded-xl bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700"
-          >
-            {actionLabel}
-          </button>
-        )}
-      </div>
-      <h2 className="mt-4 text-4xl font-bold tracking-tight">{value}</h2>
-      <p className="mt-2 text-sm text-slate-500">{subtitle}</p>
-    </div>
-  );
-}
-
-function Panel({ title, children }) {
-  return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-      <h2 className="mb-4 text-base font-semibold tracking-tight">{title}</h2>
-      {children}
-    </div>
-  );
-}
-
-function Input({
-  label,
-  value,
-  onChange,
-  placeholder,
-  type = "text",
-  step,
-  required = false,
-}) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-xs font-medium text-slate-500">
-        {label}
-      </span>
-      <input
-        type={type}
-        step={step}
-        value={value}
-        required={required}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
-        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
-      />
-    </label>
-  );
-}
-
-function TextArea({ label, value, onChange, placeholder }) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-xs font-medium text-slate-500">
-        {label}
-      </span>
-      <textarea
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
-        rows={4}
-        className="w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
-      />
-    </label>
-  );
-}
-
-function Select({ label, value, onChange, options }) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-xs font-medium text-slate-500">
-        {label}
-      </span>
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
-      >
-        <option value="">Select</option>
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-function PrimaryButton({ children, type = "button", onClick }) {
-  return (
-    <button
-      type={type}
-      onClick={onClick}
-      className="w-full rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-700"
-    >
-      {children}
-    </button>
-  );
-}
-
-function SecondaryButton({ children, onClick }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-    >
-      {children}
-    </button>
-  );
-}
-
-function Empty({ text }) {
-  return <p className="text-sm text-slate-500">{text}</p>;
-}
-
-function CompactList({ items, emptyText, renderItem }) {
-  if (items.length === 0) {
-    return <Empty text={emptyText} />;
-  }
-
-  return (
-    <div className="space-y-3">
-      {items.map((item) => (
-        <div
-          key={item.id}
-          className="rounded-2xl border border-slate-200 bg-white p-4"
-        >
-          {renderItem(item)}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-export default App;
